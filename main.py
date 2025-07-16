@@ -16,11 +16,10 @@ logger = logging.getLogger("main")
 
 TARGET_PROCESS = "msedge.exe"
 START_TIME = datetime.datetime.now()
-TIMEOUT = 15 #Seconds
+TIMEOUT = 3 #Seconds
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-ps_script_path = os.path.join(ROOT_DIR, "open_browser.ps1")
-subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", ps_script_path], check=True)
+START_SCRIPT_PATH = os.path.join(ROOT_DIR, "open_browser.ps1")
 
 WINDOW_TITLE_TO_MONITOR = {
     "TI * Dashboards - Grafana": 1,
@@ -63,8 +62,9 @@ def enum_handler(hwnd, result):
 def title_matches_any_pattern(title: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatchcase(title, pattern) for pattern in patterns)
 
-def wait_windows():
-    while (datetime.datetime.now() - START_TIME).total_seconds() < TIMEOUT:
+def wait_windows(no_wait=False):
+
+    def check():
         windows = []
         win32gui.EnumWindows(enum_handler, windows)
         
@@ -73,8 +73,19 @@ def wait_windows():
             logger.debug("Todas as janelas esperadas foram abertas.")
             logger.debug(f"Janelas abertas: {windows}")
             return windows
+        else:
+            logger.debug("Nem todas as janelas esperadas foram abertas.")
+            logger.debug(f"Janelas abertas: {windows}")
+            return None
         
-        time.sleep(0.5)
+    if no_wait:
+        windows = check()
+        
+    while (datetime.datetime.now() - START_TIME).total_seconds() < TIMEOUT:
+        windows = check()
+        if windows:
+            return windows
+        time.sleep(0.1)
     logger.exception("Timeout: nem todas as janelas apareceram.")
     raise TimeoutError("Uma janela esperada não foi encontrada.")
 
@@ -87,7 +98,11 @@ def get_monitors():
 
 
 def main():
-    windows = wait_windows()
+    windows = wait_windows(no_wait=True)
+    if not windows:
+        logger.debug("abrindo browser...")
+        subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", START_SCRIPT_PATH], check=True)
+        windows = wait_windows()
     monitors = get_monitors()
     
     if len(windows) > len(monitors):
